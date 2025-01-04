@@ -9,5 +9,3 @@ class Demo1Application
 fun main(args: Array<String>) {
     runApplication<Demo1Application>(*args)
 }
-
-
