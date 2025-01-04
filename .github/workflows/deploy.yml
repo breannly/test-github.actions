@@ -6,40 +6,53 @@ on:
       - main
 
 jobs:
-  check_diff:
+  detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      servicesChanged: ${{ steps.detect_changes.outputs.servicesChanged }}
-
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Получаем полную историю
+          fetch-depth: 2
 
-      - name: Detect changes
-        id: detect_changes
+      - name: Get changed services
+        id: set-matrix
         run: |
-          if git rev-parse HEAD^1 >/dev/null 2>&1; then
-            SERVICES=$(git diff --name-only HEAD^1 HEAD | awk -F'/' '{print $1}' | sort | uniq | grep -E '^service-' || echo "")
+          # Получаем список директорий первого уровня, содержащих build.gradle.kts
+          ALL_SERVICES=$(find . -maxdepth 2 -name "build.gradle.kts" -exec dirname {} \; | sed 's|^./||' | grep -v "^$")
+          
+          # Получаем список измененных файлов
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          
+          # Находим измененные сервисы
+          CHANGED_SERVICES=$(echo "$CHANGED_FILES" | awk -F'/' '{print $1}' | sort -u)
+          
+          # Фильтруем только те измененные директории, которые содержат build.gradle.kts
+          SERVICES_TO_TEST=$(echo "$CHANGED_SERVICES" | while read service; do
+            if echo "$ALL_SERVICES" | grep -q "^${service}$"; then
+              echo "$service"
+            fi
+          done)
+          
+          # Формируем JSON массив
+          if [ ! -z "$SERVICES_TO_TEST" ]; then
+            JSON_ARRAY=$(echo "$SERVICES_TO_TEST" | jq -R -s -c 'split("\n")[:-1]')
+            echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
           else
-            SERVICES=$(git diff-tree --no-commit-id --name-only -r HEAD | awk -F'/' '{print $1}' | sort | uniq | grep -E '^service-' || echo "")
+            echo "matrix=[]" >> $GITHUB_OUTPUT
           fi
-          echo "servicesChanged=$SERVICES"
-          echo "::set-output name=servicesChanged::$SERVICES"
 
   test:
-    needs: check_diff
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
-    if: needs.check_diff.outputs.servicesChanged != ''
     strategy:
       matrix:
-        service: ${{ fromJson(format('["{0}"]', needs.check_diff.outputs.servicesChanged)) }}
+        service: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
       fail-fast: false
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -47,6 +60,15 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Run Tests
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Run Tests for ${{ matrix.service }}
         run: |
-          cd ${{ matrix.service }} && mvn test
+          if [ -f "${{ matrix.service }}/build.gradle.kts" ]; then
+            cd ${{ matrix.service }}
+            ./gradlew test
+          else
+            echo "No build.gradle.kts found in ${{ matrix.service }}"
+            exit 1
+          fi
