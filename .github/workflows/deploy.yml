@@ -25,6 +25,7 @@ jobs:
   test:
     needs: check_diff
     runs-on: ubuntu-latest
+    if: needs.check_diff.outputs.servicesChanged != ''
     strategy:
       matrix:
         service: [${{ needs.check_diff.outputs.servicesChanged }}]
@@ -35,9 +36,8 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
           java-version: '21'
 
       - name: Run Tests
