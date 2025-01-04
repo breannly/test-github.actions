@@ -1,0 +1,45 @@
+name: Test Services
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  check_diff:
+    runs-on: ubuntu-latest
+    outputs:
+      servicesChanged: ${{ steps.detect_changes.outputs.servicesChanged }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Detect changes
+        id: detect_changes
+        run: |
+          SERVICES=$(git diff --name-only HEAD^ HEAD | awk -F'/' '{print $1}' | sort | uniq | grep -E '^service-')
+          echo "servicesChanged=${SERVICES}"
+          echo "::set-output name=servicesChanged::${SERVICES}"
+
+  test:
+    needs: check_diff
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [${{ needs.check_diff.outputs.servicesChanged }}]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'adopt'
+          java-version: '21'
+
+      - name: Run Tests
+        run: |
+          cd ${{ matrix.service }} && mvn test
