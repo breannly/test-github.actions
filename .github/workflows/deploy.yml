@@ -14,13 +14,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Получаем полную историю
 
       - name: Detect changes
         id: detect_changes
         run: |
-          SERVICES=$(git diff --name-only HEAD^ HEAD | awk -F'/' '{print $1}' | sort | uniq | grep -E '^service-')
-          echo "servicesChanged=${SERVICES}"
-          echo "::set-output name=servicesChanged::${SERVICES}"
+          if git rev-parse HEAD^1 >/dev/null 2>&1; then
+            SERVICES=$(git diff --name-only HEAD^1 HEAD | awk -F'/' '{print $1}' | sort | uniq | grep -E '^service-' || echo "")
+          else
+            SERVICES=$(git diff-tree --no-commit-id --name-only -r HEAD | awk -F'/' '{print $1}' | sort | uniq | grep -E '^service-' || echo "")
+          fi
+          echo "servicesChanged=$SERVICES"
+          echo "::set-output name=servicesChanged::$SERVICES"
 
   test:
     needs: check_diff
@@ -28,7 +34,7 @@ jobs:
     if: needs.check_diff.outputs.servicesChanged != ''
     strategy:
       matrix:
-        service: [${{ needs.check_diff.outputs.servicesChanged }}]
+        service: ${{ fromJson(format('["{0}"]', needs.check_diff.outputs.servicesChanged)) }}
       fail-fast: false
 
     steps:
@@ -38,6 +44,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
+          distribution: 'temurin'
           java-version: '21'
 
       - name: Run Tests
