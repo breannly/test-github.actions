@@ -65,7 +65,6 @@ jobs:
           if [ -d "${{ matrix.service }}/src" ]; then
             java -jar detekt-cli-1.23.3-all.jar \
               --input ${{ matrix.service }}/src \
-              --config .github/workflows/detekt-config.yml \
               --report html:${{ matrix.service }}/build/reports/detekt/detekt.html
           else
             echo "No source directory found in ${{ matrix.service }}"
