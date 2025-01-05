@@ -1,3 +1,6 @@
-style:
+formatting:
+  active: true
+
+performance:
   SpreadOperator:
     active: false
