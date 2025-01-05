@@ -1,3 +1,5 @@
+name: Test Services
+
 on:
   push:
     branches:
@@ -13,7 +15,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Поиск измененных сервисов
+      - name: Find changed services
         id: find-services
         run: |
           ALL_SERVICES=$(find . -maxdepth 2 -name "build.gradle.kts" -exec dirname {} \; | sed 's|^./||' | grep -v "^$")
@@ -45,16 +47,34 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Установка JDK
+      - name: Set up JDK
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Настройка Gradle
+      - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
 
-      - name: Тестирование ${{ matrix.service }}
+      - name: Download detekt
+        run: |
+          wget https://github.com/detekt/detekt/releases/download/v1.23.3/detekt-cli-1.23.3-all.jar
+          mkdir -p ${{ matrix.service }}/config/detekt
+          wget https://raw.githubusercontent.com/detekt/detekt/main/detekt-core/src/main/resources/default-detekt-config.yml -O ${{ matrix.service }}/config/detekt/config.yml
+
+      - name: Check code style
+        run: |
+          if [ -d "${{ matrix.service }}/src" ]; then
+            java -jar detekt-cli-1.23.3-all.jar \
+              --input ${{ matrix.service }}/src \
+              --config ${{ matrix.service }}/config/detekt/config.yml \
+              --report html:${{ matrix.service }}/build/reports/detekt/detekt.html
+          else
+            echo "No source directory found in ${{ matrix.service }}"
+            exit 1
+          fi
+
+      - name: Run tests for ${{ matrix.service }}
         run: |
           if [ -f "${{ matrix.service }}/build.gradle.kts" ]; then
             cd ${{ matrix.service }}
@@ -63,3 +83,10 @@ jobs:
             echo "Error: build.gradle.kts not found in ${{ matrix.service }}"
             exit 1
           fi
+
+      - name: Upload detekt report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: detekt-report-${{ matrix.service }}
+          path: ${{ matrix.service }}/build/reports/detekt/
