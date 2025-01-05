@@ -1,94 +1,65 @@
-name: Test Services
-
 on:
   push:
     branches:
       - main
 
 jobs:
-  detect-changes:
+  find-changes:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      matrix: ${{ steps.find-services.outputs.matrix }}
     steps:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
 
-      - name: Get changed services
-        id: set-matrix
+      - name: Поиск измененных сервисов
+        id: find-services
         run: |
-          echo "=== Looking for all services with build.gradle.kts ==="
           ALL_SERVICES=$(find . -maxdepth 2 -name "build.gradle.kts" -exec dirname {} \; | sed 's|^./||' | grep -v "^$")
-          echo "Found services:"
-          echo "$ALL_SERVICES"
-          echo "=================================================="
-          
-          echo -e "\n=== Getting list of changed files ==="
           CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
-          echo "=================================================="
-          
-          echo -e "\n=== Extracting changed service directories ==="
           CHANGED_SERVICES=$(echo "$CHANGED_FILES" | awk -F'/' '{print $1}' | sort -u)
-          echo "Changed directories:"
-          echo "$CHANGED_SERVICES"
-          echo "=================================================="
           
-          echo -e "\n=== Filtering services that need testing ==="
           SERVICES_TO_TEST=$(echo "$CHANGED_SERVICES" | while read service; do
             if echo "$ALL_SERVICES" | grep -q "^${service}$"; then
               echo "$service"
             fi
           done)
-          echo "Services to test:"
-          echo "$SERVICES_TO_TEST"
-          echo "=================================================="
           
-          # Формируем JSON массив
           if [ ! -z "$SERVICES_TO_TEST" ]; then
             JSON_ARRAY=$(echo "$SERVICES_TO_TEST" | jq -R -s -c 'split("\n")[:-1]')
-            echo -e "\n=== Final JSON matrix ==="
-            echo "$JSON_ARRAY"
-            echo "=================================================="
             echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
           else
-            echo -e "\n=== No services to test ==="
             echo "matrix=[]" >> $GITHUB_OUTPUT
           fi
 
-  test:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.matrix != '[]' }}
+  run-tests:
+    needs: find-changes
+    if: ${{ needs.find-changes.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+        service: ${{ fromJson(needs.find-changes.outputs.matrix) }}
       fail-fast: false
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up JDK
+      - name: Установка JDK
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Gradle
+      - name: Настройка Gradle
         uses: gradle/gradle-build-action@v2
 
-      - name: Run Tests for ${{ matrix.service }}
+      - name: Тестирование ${{ matrix.service }}
         run: |
-          echo "=== Testing service: ${{ matrix.service }} ==="
           if [ -f "${{ matrix.service }}/build.gradle.kts" ]; then
-            echo "Found build.gradle.kts, running tests..."
             cd ${{ matrix.service }}
             ./gradlew test
           else
-            echo "ERROR: No build.gradle.kts found in ${{ matrix.service }}"
-            echo "Current directory contents:"
-            ls -la
+            echo "Error: build.gradle.kts not found in ${{ matrix.service }}"
             exit 1
           fi
