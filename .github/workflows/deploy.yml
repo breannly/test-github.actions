@@ -1,5 +1,3 @@
-name: Test Services
-
 on:
   push:
     branches:
@@ -7,83 +5,11 @@ on:
 
 jobs:
   find-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.find-services.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
-
-      - name: Find changed services
-        id: find-services
-        run: |
-          ALL_SERVICES=$(find . -maxdepth 2 -name "build.gradle.kts" -exec dirname {} \; | sed 's|^./||' | grep -v "^$")
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-          CHANGED_SERVICES=$(echo "$CHANGED_FILES" | awk -F'/' '{print $1}' | sort -u)
-          
-          SERVICES_TO_TEST=$(echo "$CHANGED_SERVICES" | while read service; do
-            if echo "$ALL_SERVICES" | grep -q "^${service}$"; then
-              echo "$service"
-            fi
-          done)
-          
-          if [ ! -z "$SERVICES_TO_TEST" ]; then
-            JSON_ARRAY=$(echo "$SERVICES_TO_TEST" | jq -R -s -c 'split("\n")[:-1]')
-            echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
-          else
-            echo "matrix=[]" >> $GITHUB_OUTPUT
-          fi
+    uses: ./.github/workflows/find-changes.yml
 
   run-tests:
     needs: find-changes
     if: ${{ needs.find-changes.outputs.matrix != '[]' }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: ${{ fromJson(needs.find-changes.outputs.matrix) }}
-      fail-fast: false
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up JDK
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2
-
-      - name: Download detekt
-        run: |
-          wget https://github.com/detekt/detekt/releases/download/v1.23.3/detekt-cli-1.23.3-all.jar
-
-      - name: Check code style
-        run: |
-          if [ -d "${{ matrix.service }}/src" ]; then
-            java -jar detekt-cli-1.23.3-all.jar \
-              --input ${{ matrix.service }}/src \
-              --report html:${{ matrix.service }}/build/reports/detekt/detekt.html
-          else
-            echo "No source directory found in ${{ matrix.service }}"
-            exit 1
-          fi
-
-      - name: Run tests for ${{ matrix.service }}
-        run: |
-          if [ -f "${{ matrix.service }}/build.gradle.kts" ]; then
-            cd ${{ matrix.service }}
-            ./gradlew test
-          else
-            echo "Error: build.gradle.kts not found in ${{ matrix.service }}"
-            exit 1
-          fi
-
-      - name: Upload detekt report
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: detekt-report-${{ matrix.service }}
-          path: ${{ matrix.service }}/build/reports/detekt/
+    uses: ./.github/workflows/run-tests.yml
+    with:
+      matrix: ${{ needs.find-changes.outputs.matrix }}

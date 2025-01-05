@@ -1,0 +1,36 @@
+on:
+  workflow_call:
+    outputs:
+      matrix:
+        description: "Matrix of services to test"
+        value: ${{ jobs.find-changes.outputs.matrix }}
+
+jobs:
+  find-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.find-services.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Find changed services
+        id: find-services
+        run: |
+          ALL_SERVICES=$(find . -maxdepth 2 -name "build.gradle.kts" -exec dirname {} \; | sed 's|^./||' | grep -v "^$")
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          CHANGED_SERVICES=$(echo "$CHANGED_FILES" | awk -F'/' '{print $1}' | sort -u)
+          
+          SERVICES_TO_TEST=$(echo "$CHANGED_SERVICES" | while read service; do
+            if echo "$ALL_SERVICES" | grep -q "^${service}$"; then
+              echo "$service"
+            fi
+          done)
+          
+          if [ ! -z "$SERVICES_TO_TEST" ]; then
+            JSON_ARRAY=$(echo "$SERVICES_TO_TEST" | jq -R -s -c 'split("\n")[:-1]')
+            echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
+          else
+            echo "matrix=[]" >> $GITHUB_OUTPUT
+          fi

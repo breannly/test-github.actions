@@ -1,0 +1,58 @@
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        required: true
+        type: string
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(inputs.matrix) }}
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Download detekt
+        run: |
+          wget https://github.com/detekt/detekt/releases/download/v1.23.3/detekt-cli-1.23.3-all.jar
+
+      - name: Check code style
+        run: |
+          if [ -d "${{ matrix.service }}/src" ]; then
+            java -jar detekt-cli-1.23.3-all.jar \
+              --input ${{ matrix.service }}/src \
+              --report html:${{ matrix.service }}/build/reports/detekt/detekt.html
+          else
+            echo "No source directory found in ${{ matrix.service }}"
+            exit 1
+          fi
+
+      - name: Run tests for ${{ matrix.service }}
+        run: |
+          if [ -f "${{ matrix.service }}/build.gradle.kts" ]; then
+            cd ${{ matrix.service }}
+            ./gradlew test
+          else
+            echo "Error: build.gradle.kts not found in ${{ matrix.service }}"
+            exit 1
+          fi
+
+      - name: Upload detekt report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: detekt-report-${{ matrix.service }}
+          path: ${{ matrix.service }}/build/reports/detekt/
