@@ -1,4 +1,4 @@
-package ru.grokaem_java.demo1
+package ru.grokaemjava.demo1
 
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest

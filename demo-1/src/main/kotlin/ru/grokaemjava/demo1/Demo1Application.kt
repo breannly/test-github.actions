@@ -1,4 +1,4 @@
-package ru.grokaem_java.demo1
+package ru.grokaemjava.demo1
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -9,7 +9,3 @@ class Demo1Application
 fun main(args: Array<String>) {
     runApplication<Demo1Application>(*args)
 }
-
-
-
-
